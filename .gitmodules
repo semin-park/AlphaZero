@@ -1,0 +1,3 @@
+[submodule "external/blokus_cc"]
+	path = external/blokus_cc
+	url = https://github.com/SPark9625/blokus_cc
