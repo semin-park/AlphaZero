@@ -1,6 +1,6 @@
 [submodule "external/blokus_cc"]
-	path = external/blokus_cc
-	url = https://github.com/SPark9625/blokus_cc
+	path = external/blokus
+	url = https://github.com/SPark9625/blokus
 [submodule "external/tictactoe"]
 	path = external/tictactoe
 	url = https://github.com/SPark9625/TicTacToe
