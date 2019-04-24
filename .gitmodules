@@ -6,4 +6,4 @@
 	url = https://github.com/SPark9625/TicTacToe
 [submodule "external/gomoku"]
 	path = external/gomoku
-	url = git://github.com/SPark9625/gomoku
+	url = https://github.com/SPark9625/gomoku
