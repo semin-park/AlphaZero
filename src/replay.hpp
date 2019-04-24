@@ -17,7 +17,7 @@ class ReplayBuffer
 private:
     Env& env = Env::get();
 
-    int max_size, threshold;
+    size_t max_size, threshold;
     bool above_threshold{false};
 
     std::deque<std::tuple<T, T, T>>  buffer; // holds (s, p, z)
@@ -145,7 +145,7 @@ public:
             buffer.pop_front();
 
         {
-            std::unique_lock lock(m);
+            std::unique_lock<std::mutex> lock(m);
             buffer.emplace_back(std::move(state), std::move(policy), std::move(reward));
             if (buffer.size() == threshold) {
                 above_threshold = true;
@@ -183,7 +183,7 @@ public:
         auto policy_vec = policy.chunk(n);
         auto reward_vec = reward.chunk(n);
 
-        std::unique_lock lock(m);
+        std::unique_lock<std::mutex> lock(m);
         for (int i = 0; i < n; i++) {
             if (buffer.size() == threshold) {
                 above_threshold = true;
@@ -205,7 +205,7 @@ public:
     std::tuple<T,T,T> get_batch(int size)
     {
         // buffer.size() must be greater than threshold
-        std::unique_lock lock(m);
+        std::unique_lock<std::mutex> lock(m);
 
         if (threshold < size)
             throw std::runtime_error("Size must be smaller than the threshold.");
@@ -252,7 +252,7 @@ public:
         T reward = torch::empty({n, 2});
 
         {
-            std::unique_lock lock(m);
+            std::unique_lock<std::mutex> lock(m);
             for (int i = 0; i < n; i++) {
                 state.slice(0,i,i+1) = std::get<0>(buffer[i]);
                 policy.slice(0,i,i+1) = std::get<1>(buffer[i]);

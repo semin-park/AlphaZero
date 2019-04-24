@@ -56,7 +56,7 @@ private:
         net = PVNetwork(board_size, netconf.resblocks(), c_in, netconf.channels(), c_out);
 
         auto shape = env.get_board_shape();
-        std::vector<long long> input_shape(shape.begin(), shape.end());
+        std::vector<typename Env::shape_type> input_shape(shape.begin(), shape.end());
         input_shape.insert(input_shape.begin(), batch_size);
         input = torch::zeros(input_shape);
         ids.reserve(batch_size);
@@ -79,7 +79,7 @@ public:
         std::cout << "Evaluator id: " << std::this_thread::get_id() << std::endl;
         while (alive)
         {
-            std::unique_lock lock(mut);
+            std::unique_lock<std::mutex> lock(mut);
             start_token.wait(lock, [this]{ return !input_q.empty() || !alive; });
             if (!alive)
                 break;
@@ -87,13 +87,13 @@ public:
             int size = 0;
             while (size < batch_size) {
                 {
-                    std::unique_lock lock(mcts->q_lock);
+                    std::unique_lock<std::mutex> lock(mcts->q_lock);
                     if (input_q.empty())
                         break;
                 }
                 std::tuple<int, B> tup = std::move(input_q.front());
                 {
-                    std::unique_lock lock(mcts->q_lock);
+                    std::unique_lock<std::mutex> lock(mcts->q_lock);
                     input_q.pop();
                 }
                 
@@ -103,7 +103,7 @@ public:
                 size++;
             }
             
-            const torch::Tensor& X = input.slice(0,0,size);
+            const torch::Tensor& X = input.slice(0,0,size).to(device);
             torch::Tensor policy, value;
             std::tie(policy, value) = net(X);
             

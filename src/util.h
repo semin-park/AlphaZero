@@ -88,7 +88,7 @@ std::string load_network(PVNetwork& net, const std::string& path = "")
 
     std::ifstream file(export_path);
     if (!file.good()) {
-        std::cout << "Model path provided by 'ckpt_location' doesn't exist. Creating a new one." << std::endl;
+        std::cout << "Model path provided by 'ckpt_location.txt' doesn't exist. Creating a new one." << std::endl;
         torch::save(net, export_path);
     } else {
         torch::load(net, export_path);
@@ -106,7 +106,7 @@ std::string save_network(PVNetwork& net, const std::string& path)
 
     auto ver = path.substr(idx+1, diff);
     int version = std::atoi(ver.c_str()) + 1;
-    std::cout << std::endl << "ver: " << ver << " | version: " << version << std::endl;
+    std::cout << std::endl << "version: " << version << std::endl;
 
 
     std::string new_path = path.substr(0, idx + 1) + std::to_string(version) + ".pt";
@@ -130,11 +130,3 @@ std::string save_network(PVNetwork& net, const std::string& path)
 
 
 #endif /* util_h */
-
-
-
-
-
-
-
-

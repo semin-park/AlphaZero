@@ -58,14 +58,14 @@ public:
         for (int i = 0; i < nthreads; i++) {
             threads.emplace_back([this] (int idx) {
                 {
-                    std::unique_lock lock(consistency_lock);
+                    std::unique_lock<std::mutex> lock(consistency_lock);
                     ids.emplace(std::this_thread::get_id(), idx);
                     std::cout << "Thread " << idx << " id: " << std::this_thread::get_id() << std::endl;
                 }
                 
                 while (alive) {
                     {
-                        std::unique_lock lock(consistency_lock);
+                        std::unique_lock<std::mutex> lock(consistency_lock);
                         start_token.wait(lock, [this]{ return working || !alive; }); // escape if working or dead
                         if (!alive)
                             return;
@@ -123,7 +123,7 @@ public:
         
         auto start = std::chrono::system_clock::now();
         {
-            std::unique_lock lock(consistency_lock);
+            std::unique_lock<std::mutex> lock(consistency_lock);
             done_token.wait(lock, [this]{ return !working; });
         }
 
@@ -151,13 +151,13 @@ public:
         active_threads++;
         while (true) {
             if (verbosity >= 2) {
-                std::unique_lock lock(consistency_lock);
+                std::unique_lock<std::mutex> lock(consistency_lock);
                 _log_v2();
             }
             
             _simulate_once();
 
-            std::unique_lock lock(consistency_lock);
+            std::unique_lock<std::mutex> lock(consistency_lock);
             if (++count > iter_budget - nthreads) { // count is atomic, but comparison is not, so needs a lock.
                 working = false;
                 break;
@@ -165,7 +165,7 @@ public:
         }
         
 
-        std::unique_lock lock(consistency_lock);
+        std::unique_lock<std::mutex> lock(consistency_lock);
         if (--active_threads == 0) { // decrement and comparison together are not atomic
             done_token.notify_one();
         }
@@ -184,7 +184,7 @@ public:
             auto t3 = std::chrono::system_clock::now();
             
             {
-                std::unique_lock lock(consistency_lock);
+                std::unique_lock<std::mutex> lock(consistency_lock);
                 select += std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);
                 eval += std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
                 backup += std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2);
@@ -243,7 +243,7 @@ public:
             auto t1 = std::chrono::system_clock::now();
             
             {
-                std::unique_lock lock(consistency_lock);
+                std::unique_lock<std::mutex> lock(consistency_lock);
                 step += std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);
                 step_count++;
             }
@@ -268,7 +268,7 @@ public:
             auto t0 = std::chrono::system_clock::now();
             
             {
-                std::unique_lock lock(q_lock);
+                std::unique_lock<std::mutex> lock(q_lock);
                 evaluator.input_q.emplace(id, board);
                 evaluator.start_token.notify_one();
                 wait_tokens[id].wait(lock, [&queue]{ return !queue.empty(); });
@@ -279,7 +279,7 @@ public:
             
             auto t1 = std::chrono::system_clock::now();
             {
-                std::unique_lock lock(consistency_lock);
+                std::unique_lock<std::mutex> lock(consistency_lock);
                 net += std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);
                 net_count++;
             }
@@ -290,13 +290,13 @@ public:
             _append_children(leaf, policy);
             auto t3 = std::chrono::system_clock::now();
             {
-                std::unique_lock lock(consistency_lock);
+                std::unique_lock<std::mutex> lock(consistency_lock);
                 append += std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2);
             }
             
         } else {
             {
-                std::unique_lock lock(q_lock);
+                std::unique_lock<std::mutex> lock(q_lock);
                 evaluator.input_q.emplace(id, board);
                 evaluator.start_token.notify_one();
                 wait_tokens[id].wait(lock, [&queue]{ return !queue.empty(); });
@@ -394,7 +394,7 @@ public:
             int idx = 0;
             auto& queue = wait_queues[idx];
             {
-                std::unique_lock lock(q_lock);
+                std::unique_lock<std::mutex> lock(q_lock);
                 evaluator.input_q.emplace(idx, board);
                 evaluator.start_token.notify_one();
                 wait_tokens[idx].wait(lock, [&queue]{ return !queue.empty(); });
@@ -443,7 +443,7 @@ public:
             
             // Piecewise construct to assure that no copy/move occurs
             {
-                std::unique_lock lock(tree_lock);
+                std::unique_lock<std::shared_mutex> lock(tree_lock);
                 tree.emplace(
                              std::piecewise_construct,
                              std::forward_as_tuple(id),
@@ -540,7 +540,7 @@ public:
     std::atomic<bool> alive {true};
     std::atomic<bool> working {false};
     
-    std::atomic<int> active_threads = 0;
+    std::atomic<int> active_threads {0};
     
     std::shared_mutex tree_lock; // whenever you modify the structure of the tree
     std::condition_variable start_token;
