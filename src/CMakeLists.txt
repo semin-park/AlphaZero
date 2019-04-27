@@ -8,6 +8,8 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
 endif()
 
 set(CMAKE_PREFIX_PATH /usr/local/libtorch)
+set(Gomoku_PATH /usr/local/lib/libgomoku.a)
+
 find_package(Torch REQUIRED)
 find_package(cppzmq REQUIRED)
 
@@ -16,13 +18,13 @@ add_executable(generate generate.cpp)
 add_executable(train train.cpp)
 
 target_include_directories(main PRIVATE /usr/local/include ${PROJECT_SOURCE_DIR}/../external)
-target_link_libraries(main "${TORCH_LIBRARIES}" /usr/local/lib/libzmq.a /usr/local/lib/libtictactoe.a)
+target_link_libraries(main "${TORCH_LIBRARIES}" /usr/local/lib/libzmq.a ${Gomoku_PATH})
 set_property(TARGET main PROPERTY CXX_STANDARD 17)
 
 target_include_directories(generate PRIVATE /usr/local/include ${PROJECT_SOURCE_DIR}/../external)
-target_link_libraries(generate "${TORCH_LIBRARIES}" /usr/local/lib/libzmq.a /usr/local/lib/libtictactoe.a)
+target_link_libraries(generate "${TORCH_LIBRARIES}" /usr/local/lib/libzmq.a ${Gomoku_PATH})
 set_property(TARGET generate PROPERTY CXX_STANDARD 17)
 
 target_include_directories(train PRIVATE /usr/local/include ${PROJECT_SOURCE_DIR}/../external)
-target_link_libraries(train "${TORCH_LIBRARIES}" /usr/local/lib/libzmq.a /usr/local/lib/libtictactoe.a)
+target_link_libraries(train "${TORCH_LIBRARIES}" /usr/local/lib/libzmq.a ${Gomoku_PATH})
 set_property(TARGET train PROPERTY CXX_STANDARD 17)

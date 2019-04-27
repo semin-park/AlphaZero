@@ -22,13 +22,9 @@ public:
     // types
     using S  = typename Env::state_type;
     using ID = typename Env::id_type;
-    using B  = typename Env::board_type;
     using A  = typename Env::action_type;
-    /* 
-     * Ideally below should be taken from Env as well, but for now we'll assume they are torch::Tensors
-     * If they were to be taken from Env, I have to change the code where it says .item<float>()
-     * Will refactor later (read never)
-     */
+    
+    using B  = torch::Tensor;
     using R  = torch::Tensor;
     using P  = torch::Tensor;
     
@@ -53,7 +49,7 @@ public:
         wait_tokens(nthreads)
     {
         signal(SIGSEGV, sighandler);
-        alpha = 10. / (env.get_size() * env.get_size());
+        alpha = 10. / (env.get_board_size() * env.get_board_size());
         std::cout << "MCTS id: " << std::this_thread::get_id() << std::endl;
         for (int i = 0; i < nthreads; i++) {
             threads.emplace_back([this] (int idx) {
@@ -130,9 +126,13 @@ public:
         // Fill in `action_probs`
         for (auto child : root->children) {
             float prob = (float) child->n / root->n;
-            int a,b,c;
-            std::tie(a,b,c) = child->action_in;
-            actions_probs[a][b][c] = prob;
+            
+            auto action = child->action_in;
+
+            int i = action[0];
+            int j = action[1];
+
+            actions_probs[0][i][j] = prob;
         }
         
         
@@ -420,6 +420,8 @@ public:
     {
         auto actions = env.possible_actions(node.state, node.player);
         node.children.reserve(actions.size());
+
+        auto policy_a = policy.accessor<float, 2>();
         
         std::vector<float> noise;
         if (!node.parent) {
@@ -430,10 +432,10 @@ public:
         int noise_idx = 0;
         for (auto& action : actions) {
             
-            int i, j, k;
-            std::tie(i, j, k) = action;
+            int i = action[0];
+            int j = action[1];
 
-            float prior = policy[i][j][k].item<float>();
+            float prior = policy_a[i][j];
             if (!node.parent) {
                 prior = 0.75 * prior + 0.25 * noise[noise_idx++];
             }

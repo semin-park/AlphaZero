@@ -10,16 +10,18 @@
 #include "replay.hpp"
 #include "util.h"
 
-#include "tictactoe/tictactoe.hpp"
+#include "gomoku/gomoku.hpp"
+// #include "tictactoe/tictactoe.hpp"
 
 bool alive{true};
 enum { GEN, TRN };
+using Env = Gomoku;
 
 /* ------------------ Set batch_size!! ------------------ */
 
 int max_size = 100000;
 int train_threshold = 50;
-ReplayBuffer<TicTacToe> buffer(TRN, "localhost", "5555", max_size, train_threshold);
+ReplayBuffer<Env> buffer(TRN, "localhost", "5555", max_size, train_threshold);
 int batch_size = 32;
 
 /* ----------------------------------------------------- */
@@ -45,10 +47,12 @@ int main(int argc, char const *argv[])
     std::thread worker(&get_data);
     worker.detach();
 
-    TicTacToe& env = TicTacToe::get();
+    Env& env = Env::get();
 
-    int c_in, c_out, board_size;
-    std::tie(c_in, c_out, board_size) = env.get_shape_info();
+    int c_in = env.get_state_channels();
+    int c_out = env.get_action_channels();
+    int board_size = env.get_board_size();
+    
     NetConfig& netconf = NetConfig::get();
 
     PVNetwork net(board_size, netconf.resblocks(), c_in, netconf.channels(), c_out);

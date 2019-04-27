@@ -25,7 +25,7 @@ private:
 
     std::mutex m;
     std::condition_variable cond;
-    std::mt19937 rng{std::random_device{}()}; // = std::mt19937(std::random_device{}());
+    std::mt19937 rng{std::random_device{}()};
 
     std::string replay{"replay"};
     std::string state_suffix{".state"};
@@ -62,11 +62,6 @@ public:
     void send_reward(const T& reward)
     {
         // Generator API
-        // if (reward[0].item<float>() == 0) {
-        //     static std::uniform_real_distribution dist(0, 1);
-        //     if (dist(rng) < 0.9)
-        //         return;
-        // }
         int n = temp.size();
         T state, policy;
         int state_size, policy_size, reward_size;
@@ -92,11 +87,6 @@ public:
             socket.send(msg_s, ZMQ_SNDMORE);
             socket.send(msg_p, ZMQ_SNDMORE);
             socket.send(msg_r, 0);
-
-            // std::cout << "Sent everything." << std::endl;
-            // std::cout << "State:\n" << state << std::endl;
-            // std::cout << "Policy:\n" << policy << std::endl;
-            // std::cout << "Reward:\n" << reward << std::endl;
         }
     }
 
@@ -135,11 +125,6 @@ public:
         memcpy(state.data<uint8_t>(), msg_s.data(), state.numel() * sizeof(uint8_t));
         memcpy(policy.data<float>(), msg_p.data(), policy.numel() * sizeof(float));
         memcpy(reward.data<float>(), msg_r.data(), reward.numel() * sizeof(float));
-
-        // std::cout << "Got everything." << std::endl;
-        // std::cout << "State:\n" << state << std::endl;
-        // std::cout << "Policy:\n" << policy << std::endl;
-        // std::cout << "Reward:\n" << reward << std::endl;
 
         if (buffer.size() >= max_size)
             buffer.pop_front();

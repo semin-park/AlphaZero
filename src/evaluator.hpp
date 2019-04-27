@@ -50,8 +50,10 @@ private:
         worker(&Evaluator::run, this),
         batch_size(batch_size_)
     {
-        int c_in, c_out, board_size;
-        std::tie(c_in, c_out, board_size) = env.get_shape_info();
+        int c_in = env.get_state_channels();
+        int c_out = env.get_action_channels();
+        int board_size = env.get_board_size();
+
         NetConfig& netconf = NetConfig::get();
         net = PVNetwork(board_size, netconf.resblocks(), c_in, netconf.channels(), c_out);
 
@@ -111,7 +113,7 @@ public:
             auto reward_vec = value.to(torch::kCPU).chunk(size);
             
             for (int i = 0; i < size; i++) {
-                mcts->wait_queues[ids[i]].emplace(std::move(policy_vec[i][0]), std::move(reward_vec[i][0]));
+                mcts->wait_queues[ids[i]].emplace(std::move(policy_vec[i].squeeze()), std::move(reward_vec[i].squeeze()));
                 mcts->wait_tokens[ids[i]].notify_one();
             }
         }
