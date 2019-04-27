@@ -43,6 +43,9 @@ void get_data()
 
 int main(int argc, char const *argv[])
 {
+    int buffer_save_target = 500;
+    int buffer_save_increment = 500;
+
     std::thread thd(&run);
     std::thread worker(&get_data);
     worker.detach();
@@ -66,6 +69,8 @@ int main(int argc, char const *argv[])
 
     std::string dir = "replay";
     buffer.load(dir);
+    if (buffer.size() > buffer_save_target)
+        buffer_save_target += buffer_save_increment;
 
     std::cout << "Batch size: " << batch_size << " | Max size: " << max_size << std::endl;
     try {
@@ -97,6 +102,11 @@ int main(int argc, char const *argv[])
                 std::cout << "Step " << i << " | loss: " << loss.item<float>() << "\r" << std::flush;
             if (i % 1000 == 0)
                 path = save_network(net, path);
+            if (buffer.size() > buffer_save_target) {
+                buffer.save(dir);
+                buffer_save_target += buffer_save_increment;
+                std::cout << "Buffer saved. Size: " << buffer.size() << std::endl;
+            }
         }
         std::cout << std::endl;
     } catch (std::exception& e) {

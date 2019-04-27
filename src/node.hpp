@@ -2,7 +2,6 @@
 #define node_hpp
 
 #include <cmath>
-#include <map>
 #include <mutex>
 #include <iostream>
 #include <vector>

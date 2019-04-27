@@ -25,8 +25,8 @@ void run()
 
 int main(int argc, char const *argv[])
 {
-    if (argc != 3)
-        throw std::runtime_error("Number of threads and iteration budget required as an argument");
+    if (argc != 4)
+        throw std::runtime_error("Invalid arguments. Usage: ./generate <nthreads> <iter_budget> <verbosity>");
     
     std::thread thd(&run);
 
@@ -36,7 +36,7 @@ int main(int argc, char const *argv[])
 
     int nthreads = atoi(argv[1]);
     int iter_budget = atoi(argv[2]);
-    int verbosity = 2;
+    int verbosity = atoi(argv[3]);
     int batch_size = 8, vl = 3, c_puct = 3, n_res = 3, channels = 3;
 
     Env& env = Env::get();
@@ -60,6 +60,8 @@ int main(int argc, char const *argv[])
         std::cout << "Step " << i << ":" << std::endl;
         env.print(state);
         while (alive) {
+            i++;
+
             policy = agent.search_probs(state, iter_budget, verbosity);
             buffer.temporary_append(env.get_board(state), policy);
 
@@ -71,6 +73,7 @@ int main(int argc, char const *argv[])
             std::tie(state, reward, done) = env.step(state, {y, x});
             std::cout << "Step " << i << ":" << std::endl;
             env.print(state);
+            visualize(policy);
             if (done) {
                 std::cout << "Reward:\n" << reward << std::endl;
                 buffer.send_reward(reward);

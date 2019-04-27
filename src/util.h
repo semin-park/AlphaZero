@@ -128,5 +128,26 @@ std::string save_network(PVNetwork& net, const std::string& path)
     return new_path;
 }
 
+void visualize(torch::Tensor policy)
+{
+    static std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    int size = policy.sizes()[1];
+
+    std::cout << "   ";
+    for (char c : alphabet.substr(0,size))
+        std::cout << c << ' ';
+    std::cout << std::endl;
+
+    auto policy_a = policy.accessor<float, 3>();
+    for (int i = 0; i < size; i++) {
+        std::cout << std::setw(2) << i << ' ';
+        for (int j = 0; j < size; j++) {
+            std::cout << (int) (policy_a[0][i][j] * 10) << ' ';
+        }
+        std::cout << std::endl;
+    }
+}
+
 
 #endif /* util_h */
