@@ -452,6 +452,8 @@ public:
                              std::forward_as_tuple(id, prior, &node)
                              );
             }
+
+            std::shared_lock<std::shared_mutex> lock(tree_lock);
             node.children.push_back(&tree.at(id));
         }
     }
