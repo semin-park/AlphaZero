@@ -19,7 +19,7 @@ using Env = Gomoku;
 
 /* ------------------ Set batch_size!! ------------------ */
 
-int max_size = 100000;
+int max_size = 2000;
 int train_threshold = 50;
 ReplayBuffer<Env> buffer(TRN, "localhost", "5555", max_size, train_threshold);
 int batch_size = 32;
@@ -70,7 +70,7 @@ int main(int argc, char const *argv[])
     std::string dir = "replay";
     buffer.load(dir);
     if (buffer.size() > buffer_save_target)
-        buffer_save_target += buffer_save_increment;
+        buffer_save_target = buffer.size() + buffer_save_increment;
 
     std::cout << "Batch size: " << batch_size << " | Max size: " << max_size << std::endl;
     try {

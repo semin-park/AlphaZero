@@ -143,7 +143,11 @@ void visualize(torch::Tensor policy)
     for (int i = 0; i < size; i++) {
         std::cout << std::setw(2) << i << ' ';
         for (int j = 0; j < size; j++) {
-            std::cout << (int) (policy_a[0][i][j] * 10) << ' ';
+            int lvl = (int) (policy_a[0][i][j] * 10);
+            if (lvl != 0)
+                std::cout << lvl << ' ';
+            else
+                std::cout << '.' << ' ';
         }
         std::cout << std::endl;
     }

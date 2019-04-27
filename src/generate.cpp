@@ -37,7 +37,7 @@ int main(int argc, char const *argv[])
     int nthreads = atoi(argv[1]);
     int iter_budget = atoi(argv[2]);
     int verbosity = atoi(argv[3]);
-    int batch_size = 8, vl = 3, c_puct = 3, n_res = 3, channels = 3;
+    int batch_size = 16, vl = 3, c_puct = 3, n_res = 3, channels = 3;
 
     Env& env = Env::get();
     int board_size = env.get_board_size();
@@ -70,10 +70,12 @@ int main(int argc, char const *argv[])
             int y = point / board_size;
             int x = point - y * board_size;
 
+            char player = env.get_player(state) == 0 ? 'O' : 'X';
             std::tie(state, reward, done) = env.step(state, {y, x});
-            std::cout << "Step " << i << ":" << std::endl;
-            env.print(state);
+            
+            std::cout << "Step " << i << " (Player " << player << "):" << std::endl;
             visualize(policy);
+            env.print(state);
             if (done) {
                 std::cout << "Reward:\n" << reward << std::endl;
                 buffer.send_reward(reward);
