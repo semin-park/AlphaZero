@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <csignal>
+#include <chrono> 
+#include <ctime> 
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -100,18 +102,18 @@ std::string load_network(PVNetwork& net, const std::string& path = "")
 
 std::string save_network(PVNetwork& net, const std::string& path)
 {
+    std::cout << "(Saving Network) ";
     int idx = path.find("_");
     auto dot = path.find(".") - 1;
     auto diff = dot - idx;
 
     auto ver = path.substr(idx+1, diff);
     int version = std::atoi(ver.c_str()) + 1;
-    std::cout << std::endl << "version: " << version << std::endl;
+    std::cout << "Version: " << version << " | ";
 
 
     std::string new_path = path.substr(0, idx + 1) + std::to_string(version) + ".pt";
     torch::save(net, new_path);
-    std::cout << "Saved at " << new_path << std::endl;
 
     int fd = open("ckpt_location.txt", O_WRONLY);
     flock(fd, LOCK_EX);
@@ -119,37 +121,54 @@ std::string save_network(PVNetwork& net, const std::string& path)
     std::ofstream file("ckpt_location.txt");
     if (!file.is_open()) {
         flock(fd, LOCK_UN);
-        throw std::runtime_error("ckpt_location does not exist. Did you remove it by accident?");
+        throw std::runtime_error("ckpt_location.txt does not exist. Did you remove it by accident?");
     }
 
     file << new_path;
+    file.close();
     flock(fd, LOCK_UN);
 
+    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()); 
+    std::cout << "Saved at " << new_path << " | " << ctime(&now);
     return new_path;
 }
 
-void visualize(torch::Tensor policy)
+std::stringstream visualize_stream(torch::Tensor policy)
 {
+    // This function currently is Gomoku / TicTacToe specific
     static std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    std::stringstream stream;
 
     int size = policy.sizes()[1];
 
-    std::cout << "   ";
+    stream << "   ";
     for (char c : alphabet.substr(0,size))
-        std::cout << c << ' ';
-    std::cout << std::endl;
+        stream << c << ' ';
+    stream << std::endl;
 
     auto policy_a = policy.accessor<float, 3>();
     for (int i = 0; i < size; i++) {
-        std::cout << std::setw(2) << i << ' ';
+        stream << std::setw(2) << i << ' ';
         for (int j = 0; j < size; j++) {
             int lvl = (int) (policy_a[0][i][j] * 10);
             if (lvl != 0)
-                std::cout << lvl << ' ';
+                stream << lvl << ' ';
             else
-                std::cout << '.' << ' ';
+                stream << '.' << ' ';
         }
-        std::cout << std::endl;
+        stream << std::endl;
+    }
+    return stream;
+}
+
+void adjacent_display(std::stringstream& policy, std::stringstream& board)
+{
+    std::string l,r;
+    while (true) {
+        if (!getline(policy, l)) break;
+        getline(board, r);
+
+        std::cout << l << ' ' << r << std::endl;
     }
 }
 

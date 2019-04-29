@@ -107,6 +107,7 @@ public:
         verbosity = verbosity_;
         if (verbosity >= 3)
             _log_init();
+        evaluator.reset_stat();
         
         _make_root(state_);
         P actions_probs = torch::zeros(env.get_action_shape());
@@ -135,9 +136,9 @@ public:
             actions_probs[0][i][j] = prob;
         }
         
-        
+        auto evaluator_stat = evaluator.retrieve_stat();
         if (verbosity >= 1) {
-            _log_v1(start);
+            _log_v1(start, evaluator_stat);
             if (verbosity >= 3)
                 _log_v3();
         }
@@ -500,6 +501,12 @@ public:
     {
         evaluator.setup();
     }
+
+    void clear()
+    {
+        std::unique_lock<std::shared_mutex> lock(tree_lock);
+        tree.clear();
+    }
     
     
     /*
@@ -566,15 +573,23 @@ public:
         step_count = net_count = 0;
     }
 
-    void _log_v1(const std::chrono::time_point<std::chrono::system_clock>& start)
+    void _log_v1(const std::chrono::time_point<std::chrono::system_clock>& start,
+        const std::tuple<float, int>& evaluator_stat)
     {
         using std::chrono::duration_cast;
         using std::chrono::milliseconds;
         using std::chrono::system_clock;
+
+        float avg_size; int nn_count;
+        std::tie(avg_size, nn_count) = evaluator_stat;
         
         auto duration = duration_cast<milliseconds>(system_clock::now() - start);
-        std::cout << "(LOG) threads: " << nthreads << " | iteration: " << count;
-        std::cout << " | time(ms): " << duration.count() << std::endl;
+        std::cout << "(LOG) threads: " << nthreads
+                  << " | iteration: " << count
+                  << " | average batch size: " << avg_size
+                  << " | NN count: " << nn_count
+                  << " | time(ms): " << duration.count()
+                  << std::endl;
     }
 
     void _log_v2()

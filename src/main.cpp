@@ -62,7 +62,7 @@ int main(int argc, const char * argv[]) {
 
         std::cout << "Step " << i << std::endl;
         std::cout << "State:" << std::endl;
-        env.print(state);
+        std::cout << env.to_string(state).str() << std::endl;
         std::cout << "Predicted policy:\n" << actual_policy << std::endl;
         std::cout << "Predicted reward:\n" << v << std::endl << std::endl;
 

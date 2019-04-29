@@ -104,6 +104,8 @@ public:
                 input.slice(0, size, size + 1) = std::get<1>(tup);
                 size++;
             }
+
+            update_stat(size);
             
             const torch::Tensor& X = input.slice(0,0,size).to(device);
             torch::Tensor policy, value;
@@ -138,9 +140,26 @@ public:
             device = torch::kCUDA;
             net->to(device);
         }
-        
+        // net->eval();
         if (export_path != model_path)
             model_path = export_path;
+    }
+
+    void reset_stat()
+    {
+        avg_size = 0;
+        count = 0;
+    }
+
+    void update_stat(int size)
+    {
+        count++;
+        avg_size += (size - avg_size) / count;
+    }
+
+    std::tuple<float, int> retrieve_stat()
+    {
+        return {avg_size, count};
     }
     
 private:
@@ -151,6 +170,8 @@ private:
     Env& env = Env::get();
     
     MCTS<Env>* mcts;
+    float avg_size{0};
+    int count{0};
     
     
     bool alive{true};
