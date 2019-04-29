@@ -48,13 +48,13 @@ int main(int argc, char const *argv[])
     int nthreads = atoi(argv[1]);
     int iter_budget = atoi(argv[2]);
     int verbosity = atoi(argv[3]);
-    int batch_size = 16, vl = 3, c_puct = 3, n_res = 3, channels = 3;
+    int batch_size = 16, vl = 3, c_puct = 3;
 
     Env& env = Env::get();
     int board_size = env.get_board_size();
 
     // MCTS(int nthreads_, int batch_size_, float vl_, float c_puct_, int n_res_, int channels_)
-    MCTS<Env> agent(nthreads, batch_size, vl, c_puct, n_res, channels);
+    MCTS<Env> agent(nthreads, batch_size, vl, c_puct);
     ReplayBuffer<Env> buffer(GEN, "*", "5555");
 
     std::random_device rd;

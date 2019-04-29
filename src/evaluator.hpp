@@ -36,16 +36,16 @@ friend class MCTS<Env>;
     using P  = torch::Tensor;
     
 public:
-    static Evaluator& get(MCTS<Env>* mcts_, int batch_size_, int n_res, int channels)
+    static Evaluator& get(MCTS<Env>* mcts_, int batch_size_)
     {
-        static Evaluator singleton(mcts_, batch_size_, n_res, channels);
+        static Evaluator singleton(mcts_, batch_size_);
         return singleton;
     }
 
 private:
     // Evaluator needs to know the mcts instance because it needs to
     // push to the wait queues and notify once evaluated
-    Evaluator(MCTS<Env>* mcts_, int batch_size_, int n_res, int channels)
+    Evaluator(MCTS<Env>* mcts_, int batch_size_)
       : mcts(mcts_),
         worker(&Evaluator::run, this),
         batch_size(batch_size_)
@@ -79,6 +79,7 @@ public:
     void run()
     {
         std::cout << "Evaluator id: " << std::this_thread::get_id() << std::endl;
+        torch::Tensor X, policy, value;
         while (alive)
         {
             std::unique_lock<std::mutex> lock(mut);
@@ -107,8 +108,7 @@ public:
 
             update_stat(size);
             
-            const torch::Tensor& X = input.slice(0,0,size).to(device);
-            torch::Tensor policy, value;
+            X = input.slice(0,0,size).to(device);
             std::tie(policy, value) = net(X);
             
             auto policy_vec = policy.to(torch::kCPU).chunk(size);

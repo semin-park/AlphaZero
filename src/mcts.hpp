@@ -38,13 +38,11 @@ public:
      * batch_size_: Maximum batch size for the evaluator
      * conf_      : Configuration object
      */
-    MCTS(int nthreads_, int batch_size_, float vl_, float c_puct_, int n_res_, int channels_)
+    MCTS(int nthreads_, int batch_size_, float vl_, float c_puct_)
       : nthreads(nthreads_),
         batch_size(batch_size_),
         vl(vl_),
         c_puct(c_puct_),
-        n_res(n_res_),
-        channels(channels_),
         wait_queues(nthreads),
         wait_tokens(nthreads)
     {
@@ -107,9 +105,20 @@ public:
         verbosity = verbosity_;
         if (verbosity >= 3)
             _log_init();
+
+        auto start = std::chrono::system_clock::now();
+
         evaluator.reset_stat();
+
+        if (verbosity >= 3) {
+            auto t0 = std::chrono::system_clock::now();
+            _make_root(state_);
+            auto t1 = std::chrono::system_clock::now();
+            create = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);
+        } else {
+            _make_root(state_);
+        }
         
-        _make_root(state_);
         P actions_probs = torch::zeros(env.get_action_shape());
         
         iter_budget = iter_budget_;
@@ -118,7 +127,6 @@ public:
         working = true;
         start_token.notify_all();
         
-        auto start = std::chrono::system_clock::now();
         {
             std::unique_lock<std::mutex> lock(consistency_lock);
             done_token.wait(lock, [this]{ return !working; });
@@ -522,14 +530,12 @@ public:
     int batch_size;
     float vl;
     float c_puct;
-    int n_res;
-    int channels;
     
     // Environment
     Env& env = Env::get();
     
     // Runs the actual neural network
-    Evaluator<Env>& evaluator = Evaluator<Env>::get(this, batch_size, n_res, channels);
+    Evaluator<Env>& evaluator = Evaluator<Env>::get(this, batch_size);
 
 
     // How many iterations we've done so far
@@ -614,6 +620,7 @@ public:
         if (step_count == 0) step_count++;
         if (net_count == 0) net_count++;
         
+        std::cout << "(Root Prune) Total: " << std::setw(8) << create.count() << std::endl;
         std::cout << "(Select)     Total: " << std::setw(8) << select_f << " | Avg: " << select_f / count << std::endl;
         std::cout << "(Eval)       Total: " << std::setw(8) << eval_f << " | Avg: " << eval_f / count << std::endl;
         std::cout << "    (Step)   Total: " << std::setw(8) << step_f << " | Avg: " << step_f / step_count << std::endl;
@@ -627,7 +634,7 @@ public:
         std::cout << std::endl;
     }
     
-    std::chrono::milliseconds select, eval, step, net, append, backup;
+    std::chrono::milliseconds create, select, eval, step, net, append, backup;
     std::atomic<int> step_count, net_count;
     std::mutex consistency_lock; // whenever you're modifying counting variables, or changing the status of the MCTS
 
