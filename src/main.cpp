@@ -11,6 +11,7 @@
 
 #include <torch/torch.h>
 
+#include "mcts.hpp"
 #include "netconfig.hpp"
 #include "network.hpp"
 #include "replay.hpp"
@@ -22,56 +23,137 @@
 using namespace std::chrono_literals;
 
 using Env = Gomoku;
+using S = typename Env::state_type;
+using B = typename Env::board_type;
+using R = typename Env::reward_type;
+using T = torch::Tensor;
 
+Env& env = Env::get();
+
+Action get_action()
+{
+    std::cout << "Action: ";
+    std::string str;
+    getline(std::cin, str);
+
+    if (str == "q" || str == "quit" || str == "exit") exit(0);
+    
+    char a = str[0];
+    char b = str[2];
+    
+    int i = int(a - '0');
+    int j = int(b - 'A');
+    // int j = int(b - '0');
+    
+    std::cout << "Action: " << i << ',' << j << std::endl;
+    
+    return {i,j};
+}
+
+Action get_mcts_action(MCTS<Env>& agent, const State& state, int iter_budget, int verbosity)
+{
+    auto policy = agent.search_probs(state, iter_budget, verbosity);
+
+    int point = torch::argmax(policy).item<int>();
+
+    int y = point / env.get_board_size();
+    int x = point - y * env.get_board_size();
+    return {y, x};
+}
 
 int main(int argc, const char * argv[]) {
-    using S = typename Env::state_type;
-    using B = typename Env::board_type;
-    using R = typename Env::reward_type;
-    
-    Env& env = Env::get();
+    enum { HUM, CMP };
+    std::cout << "Play against? ";
+    std::string response;
+    getline(std::cin, response);
+    bool match = false;
+    if (response == "y" || response == "Y" || response == "yes")
+        match = true;
 
     int c_in = env.get_state_channels();
     int c_out = env.get_action_channels();
     int board_size = env.get_board_size();
-    NetConfig& netconf = NetConfig::get();
 
-    PVNetwork net(board_size, netconf.resblocks(), c_in, netconf.channels(), c_out);
-    std::string path = load_network(net);
+    if (match) {
+        std::cout << "Want to play first? ";
+        std::string first;
+        getline(std::cin, first);
+        
+        MCTS<Env> agent(3, 8, 3, 3);
 
-    S state = env.reset();
-    B board;
-    R reward;
-    bool done = false;
+        int player = CMP;
+        
+        if (first == "y" || first == "Y" || first == "yes")
+            player = HUM;
 
-    torch::Tensor p, v;
+        bool done = false;
+        Action action;
+        R reward;
+        auto state = env.reset();
+        auto board_stream = env.to_string(state);
+        std::cout << board_stream.str() << std::endl;
+        for (int i = 1; ; i++) {
+            if (player == HUM)
+                action = get_action();
+            else
+                action = get_mcts_action(agent, state, 1600, 3);
+            
+            std::tie(state, reward, done) = env.step(state, action);
+            
+            char mark = 'O';
+            if (player == 1)
+                mark = 'X';
+            std::cout << "Step " << i << " (Player " << mark << "):" << std::endl;
+            auto board_stream = env.to_string(state);
+            std::cout << board_stream.str() << std::endl;
+            player = !player;
 
-    for (int i = 1; ; i++) {
-        if (done)
-            break;
-        board = env.get_board(state);
-        std::tie(p, v) = net(board.unsqueeze(0).to(torch::kFloat32));
-
-        auto actions = env.possible_actions(state, env.get_player(state));
-        torch::Tensor actual_policy = torch::zeros({board_size, board_size});
-        for (auto& a : actions) {
-            int i = a[0];
-            int j = a[1];
-            actual_policy[i][j] = p.squeeze()[i][j];
+            if (done) {
+                std::cout << "Reward:\n" << reward << std::endl;
+                agent.clear();
+                break;
+            }
         }
+    } else {
+        NetConfig& netconf = NetConfig::get();
 
-        std::cout << "Step " << i << std::endl;
-        std::cout << "State:" << std::endl;
-        std::cout << env.to_string(state).str() << std::endl;
-        std::cout << "Predicted policy:\n" << actual_policy << std::endl;
-        std::cout << "Predicted reward:\n" << v << std::endl << std::endl;
+        PVNetwork net(board_size, netconf.resblocks(), c_in, netconf.channels(), c_out);
+        std::string path = load_network(net);
 
-        int point = torch::argmax(actual_policy).item<int>();
+        S state = env.reset();
+        B board;
+        R reward;
+        bool done = false;
 
-        int y = point / 3;
-        int x = point - y * 3;
+        torch::Tensor p, v;
 
-        std::tie(state, reward, done) = env.step(state, {y, x});
+        for (int i = 1; ; i++) {
+            if (done)
+                break;
+            board = env.get_board(state);
+            std::tie(p, v) = net(board.unsqueeze(0).to(torch::kFloat32));
+
+            auto actions = env.possible_actions(state, env.get_player(state));
+            torch::Tensor actual_policy = torch::zeros({board_size, board_size});
+            for (auto& a : actions) {
+                int i = a[0];
+                int j = a[1];
+                actual_policy[i][j] = p.squeeze()[i][j];
+            }
+
+            std::cout << "Step " << i << std::endl;
+            std::cout << "State:" << std::endl;
+            std::cout << env.to_string(state).str() << std::endl;
+            std::cout << "Predicted policy:\n" << actual_policy << std::endl;
+            std::cout << "Predicted reward:\n" << v << std::endl << std::endl;
+
+            int point = torch::argmax(actual_policy).item<int>();
+
+            int y = point / board_size;
+            int x = point - y * board_size;
+
+            std::tie(state, reward, done) = env.step(state, {y, x});
+        }
     }
 
     return 0;
