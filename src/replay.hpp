@@ -149,17 +149,15 @@ public:
         memcpy(policy.data<float>(), msg_p.data(), policy.numel() * sizeof(float));
         memcpy(reward.data<float>(), msg_r.data(), reward.numel() * sizeof(float));
 
-        if (buffer.size() >= max_size)
-            buffer.pop_front();
 
-        {
-            std::unique_lock<std::mutex> lock(m);
-            buffer.emplace_back(std::move(state), std::move(policy), std::move(reward));
-            if (buffer.size() == threshold) {
-                above_threshold = true;
-                cond.notify_one();
-            }
+        std::unique_lock<std::mutex> lock(m);
+        buffer.emplace_back(std::move(state), std::move(policy), std::move(reward));
+        if (buffer.size() == threshold) {
+            above_threshold = true;
+            cond.notify_one();
         }
+        if (buffer.size() > max_size)
+            buffer.pop_front();
     }
 
 
@@ -251,17 +249,18 @@ public:
         std::string policy_path = dir + replay + policy_suffix;
         std::string reward_path = dir + replay + reward_suffix;
 
-        int n = buffer.size();
-
         auto b_sh = env.get_board_shape();
         auto a_sh = env.get_action_shape();
 
-        T state = torch::empty({n, b_sh[0], b_sh[1], b_sh[2]});
-        T policy = torch::empty({n, a_sh[0], a_sh[1], a_sh[2]});
-        T reward = torch::empty({n, 2});
-
+        T state, policy, reward;
         {
             std::unique_lock<std::mutex> lock(m);
+            int n = buffer.size();
+
+            state = torch::empty({n, b_sh[0], b_sh[1], b_sh[2]});
+            policy = torch::empty({n, a_sh[0], a_sh[1], a_sh[2]});
+            reward = torch::empty({n, 2});
+
             for (int i = 0; i < n; i++) {
                 state.slice(0,i,i+1) = std::get<0>(buffer[i]);
                 policy.slice(0,i,i+1) = std::get<1>(buffer[i]);
