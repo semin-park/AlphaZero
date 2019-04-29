@@ -63,7 +63,8 @@ public:
     {
         // Generator API
         int n = temp.size();
-        T state, policy;
+        T state, state_r, state_f;
+        T policy, policy_r, policy_f;
         int state_size, policy_size, reward_size;
 
         for (int i = 0; i < n; i++) {
@@ -76,17 +77,39 @@ public:
                 reward_size = reward.numel() * sizeof(float);
             }
 
-            zmq::message_t msg_s(state_size);
-            zmq::message_t msg_p(policy_size);
-            zmq::message_t msg_r(reward_size);
+            for (int n = 0; n < 4; n++) {
+                // rotated
+                state_r = state.rot90(n);
+                policy_r = policy.rot90(n);
 
-            memcpy(msg_s.data(), state.data<uint8_t>(), state_size);
-            memcpy(msg_p.data(), policy.data<float>(), policy_size);
-            memcpy(msg_r.data(), reward.data<float>(), reward_size);
+                zmq::message_t msg_s_r(state_size);
+                zmq::message_t msg_p_r(policy_size);
+                zmq::message_t msg_r_r(reward_size);
 
-            socket.send(msg_s, ZMQ_SNDMORE);
-            socket.send(msg_p, ZMQ_SNDMORE);
-            socket.send(msg_r, 0);
+                memcpy(msg_s_r.data(), state_r.data<uint8_t>(), state_size);
+                memcpy(msg_p_r.data(), policy_r.data<float>(), policy_size);
+                memcpy(msg_r_r.data(), reward.data<float>(), reward_size);
+
+                socket.send(msg_s_r, ZMQ_SNDMORE);
+                socket.send(msg_p_r, ZMQ_SNDMORE);
+                socket.send(msg_r_r, 0);
+
+                // flipped
+                state_f = state_r.flip(1);
+                policy_f = policy_r.flip(1);
+
+                zmq::message_t msg_s_f(state_size);
+                zmq::message_t msg_p_f(policy_size);
+                zmq::message_t msg_r_f(reward_size);
+
+                memcpy(msg_s_f.data(), state_f.data<uint8_t>(), state_size);
+                memcpy(msg_p_f.data(), policy_f.data<float>(), policy_size);
+                memcpy(msg_r_f.data(), reward.data<float>(), reward_size);
+
+                socket.send(msg_s_f, ZMQ_SNDMORE);
+                socket.send(msg_p_f, ZMQ_SNDMORE);
+                socket.send(msg_r_f, 0);
+            }
         }
     }
 
@@ -220,6 +243,7 @@ public:
 
     void save(std::string dir)
     {
+        std::cout << "(Saving Buffer) ";
         if (dir[dir.size() - 1] != '/')
             dir += "/";
 
@@ -247,6 +271,7 @@ public:
         torch::save(state, state_path);
         torch::save(policy, policy_path);
         torch::save(reward, reward_path);
+        std::cout << "Buffer saved. Size: " << buffer.size() << std::endl;
     }
 
     int size()
