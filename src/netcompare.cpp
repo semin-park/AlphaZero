@@ -37,8 +37,13 @@ int main(int argc, char const *argv[])
     PVNetwork net(board_size, netconf.resblocks(), c_in, c_out);
     std::cout << "Network created." << std::endl;
 
-    auto device = torch::cuda::is_available() ? torch::kCUDA : torch::kCPU;
+    auto device = torch::kCPU;
+    if (torch::cuda::is_available()) {
+        device = torch::kCUDA;
+        std::cout << "Device: CUDA" << std::endl;
+    }
     net->to(device);
+
 
     torch::optim::Adam optimizer(net->parameters(), torch::optim::AdamOptions(3e-4).beta1(0.9).beta2(0.999));
 
