@@ -29,9 +29,9 @@ int main(int argc, char const *argv[])
     int c_out = env.get_action_channels();
     int board_size = env.get_board_size();
 
-    NetConfig& netconf = NetConfig::get();
+    NetConfig& netconf = NetConfig::get(0);
 
-    PVNetwork net(board_size, netconf.resblocks(), c_in, netconf.channels(), c_out);
+    PVNetwork net(board_size, netconf.resblocks(), c_in, c_out);
     std::cout << "Loading Network." << std::endl;
     torch::load(net, path);
     std::cout << "Network loaded." << std::endl;
