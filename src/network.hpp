@@ -48,7 +48,6 @@ struct PolicyHeadImpl : torch::nn::Module {
     torch::Tensor forward(const torch::Tensor& input)
     {
         torch::Tensor x = conv(input);
-        // std::cout << "In PolicyHeadImpl\n" << x << std::endl;
         auto shape = x.sizes();
         x = torch::softmax(x.flatten(1), 1).view(shape);
         return x;
@@ -94,25 +93,30 @@ TORCH_MODULE(ValueHead);
  * P         : Padding (only applied where K == 3)
  */
 struct PVNetworkImpl : torch::nn::Module {
-    PVNetworkImpl(int board_size, int n_res, int in, int C, int out, int K = 3, int P = 1)
-      : num_res(n_res),
-        CBlock(register_module("CBlock", ConvBlock(in, C, K, P))),
-        RBlock(register_module("RBlock", ResBlock(C, K, P))),
-        PHead(register_module("PHead", PolicyHead(C, out))),
-        VHead(register_module("VHead", ValueHead(C, board_size*board_size))) { /* pass */ }
+    PVNetworkImpl(int board_size, const std::vector<int>& Cs, int in, int out, int K = 3, int P = 1)
+      : num_res(Cs.size()),
+        CBlock(register_module("CBlock", ConvBlock(in, Cs[0], K, P))),
+        PHead(register_module("PHead", PolicyHead(num_res - 1, out))),
+        VHead(register_module("VHead", ValueHead(num_res - 1, board_size*board_size)))
+    {
+        for (int i = 0; i < num_res; i++) {
+            int C = Cs[i];
+            RBlocks.emplace_back(register_module("RBlock_" + std::to_string(i), ResBlock(C, K, P)));
+        }
+    }
 
     std::tuple<torch::Tensor, torch::Tensor> forward(const torch::Tensor& input)
     {
         torch::Tensor x = CBlock(input);
         for (int i = 0; i < num_res; i++)
-            x = RBlock(x);
+            x = RBlocks[i](x);
         return std::make_tuple(PHead(x), VHead(x));
     }
 
     int num_res;
 
     ConvBlock CBlock;
-    ResBlock RBlock;
+    std::vector<ResBlock> RBlocks;
     PolicyHead PHead;
     ValueHead VHead;
 };

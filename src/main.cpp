@@ -1,4 +1,4 @@
-//
+
 //  main.cpp
 //  AlphaZero
 //
@@ -115,9 +115,9 @@ int main(int argc, const char * argv[]) {
             }
         }
     } else {
-        NetConfig& netconf = NetConfig::get();
+        NetConfig& netconf = NetConfig::get(0);
 
-        PVNetwork net(board_size, netconf.resblocks(), c_in, netconf.channels(), c_out);
+        PVNetwork net(board_size, netconf.resblocks(), c_in, c_out);
         std::string path = load_network(net);
 
         S state = env.reset();

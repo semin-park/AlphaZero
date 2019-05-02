@@ -54,8 +54,8 @@ private:
         int c_out = env.get_action_channels();
         int board_size = env.get_board_size();
 
-        NetConfig& netconf = NetConfig::get();
-        net = PVNetwork(board_size, netconf.resblocks(), c_in, netconf.channels(), c_out);
+        NetConfig& netconf = NetConfig::get(0);
+        net = PVNetwork(board_size, netconf.resblocks(), c_in, c_out);
 
         auto shape = env.get_board_shape();
         std::vector<typename Env::shape_type> input_shape(shape.begin(), shape.end());
