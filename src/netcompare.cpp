@@ -31,9 +31,10 @@ int main(int argc, char const *argv[])
     int batch_size = 8;
     
     NetConfig& netconf = NetConfig::get(n);
+    std::cout << "Channels: [";
     for (int i : netconf.resblocks())
         std::cout << i << ' ';
-    std::cout << std::endl;
+    std::cout << ']' << std::endl;
     PVNetwork net(board_size, netconf.resblocks(), c_in, c_out);
     std::cout << "Network created." << std::endl;
 
