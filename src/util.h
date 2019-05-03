@@ -96,6 +96,8 @@ std::string load_network(PVNetwork& net, const std::string& path = "")
         torch::load(net, export_path);
         std::cout << "Network loaded." << std::endl << "Path: " << export_path << std::endl;
     }
+    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()); 
+    std::cout << "Current time: " << ctime(&now);
     return export_path;
 }
 

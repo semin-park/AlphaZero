@@ -73,6 +73,9 @@ int main(int argc, char const *argv[])
         agent.load();
         i = 0;
         state = env.reset();
+
+        agent.search_probs(state, iter_budget, 0); // warmup (batch statistics)
+
         std::cout << "Step " << i << ":" << std::endl;
         std::cout << env.to_string(state).str() << std::endl;
         while (alive) {

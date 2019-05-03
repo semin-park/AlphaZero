@@ -1,4 +1,6 @@
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 
 #include <torch/torch.h>
 
@@ -17,6 +19,7 @@ int main(int argc, char const *argv[])
         throw std::runtime_error("Wrong number of arguments supplied.");
 
     // DO NOT change!
+    std::stringstream stream;
     int max_size = 100000;
     int train_threshold = 50;
     ReplayBuffer<Env> buffer(TRN, "localhost", "5555", max_size, train_threshold);
@@ -32,9 +35,13 @@ int main(int argc, char const *argv[])
     
     NetConfig& netconf = NetConfig::get(n);
     std::cout << "Channels: [";
-    for (int i : netconf.resblocks())
+    stream << "Channels: [";
+    for (int i : netconf.resblocks()) {
         std::cout << i << ' ';
+        stream << i << ' ';
+    }
     std::cout << ']' << std::endl;
+    stream << ']' << std::endl;
     PVNetwork net(board_size, netconf.resblocks(), c_in, c_out);
     std::cout << "Network created." << std::endl;
 
@@ -51,8 +58,11 @@ int main(int argc, char const *argv[])
     torch::Tensor state, policy, reward;
     torch::Tensor p, v;
     torch::Tensor vloss, ploss, wloss, loss;
+    double avg;
     for (int epoch = 0; epoch < 10; epoch++) {
-        std::cout << "<Epoch: " << epoch << '>' << std::endl;
+        avg = 0;
+        std::cout << "<Epoch " << epoch << '>' << std::endl;
+        stream << "<Epoch " << epoch << '>' << std::endl;
         int max_step = buffer.size() / batch_size;
         for (int step = 0; step < max_step; step++) {
             net->zero_grad();
@@ -76,22 +86,23 @@ int main(int argc, char const *argv[])
 
             optimizer.step();
 
+            avg += (loss.item<float>() - avg) / (step + 1);
+
             if (step % 1000 == 0) {
-                std::cout << "Step [" << step << "/" << max_step << "] | loss: " << loss.item<float>() << std::endl;
+                std::cout << "[" << step << "/" << max_step << "] | loss: " << loss.item<float>() << std::endl;
+                stream << "[" << step << "/" << max_step << "] | loss: " << loss.item<float>() << std::endl;
             }
         }
-        std::cout << "Step [" << max_step << "/" << max_step << "] | loss: " << loss.item<float>() << std::endl;
+        std::cout << "[" << max_step << "/" << max_step << "] | loss: " << loss.item<float>() << std::endl;
+        stream << "[" << max_step << "/" << max_step << "] | loss: " << loss.item<float>() << std::endl;
+        std::cout << "Avg " << avg << std::endl;
+        stream << "Avg " << avg << std::endl;
     }
+
+    std::ofstream file;
+    file.open("log" + std::to_string(n) + ".txt");
+    file << stream.rdbuf();
+    file.close();
     
     return 0;
 }
-
-
-
-
-
-
-
-
-
-

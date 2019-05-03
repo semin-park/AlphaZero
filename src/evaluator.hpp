@@ -54,7 +54,8 @@ private:
         int c_out = env.get_action_channels();
         int board_size = env.get_board_size();
 
-        NetConfig& netconf = NetConfig::get(0);
+        NetConfig& netconf = NetConfig::get(2);
+        std::cout << netconf.channels_to_string() << std::endl;
         net = PVNetwork(board_size, netconf.resblocks(), c_in, c_out);
 
         auto shape = env.get_board_shape();
@@ -80,6 +81,7 @@ public:
     {
         std::cout << "Evaluator id: " << std::this_thread::get_id() << std::endl;
         torch::Tensor X, policy, value;
+        torch::NoGradGuard no_grad;
         while (alive)
         {
             std::unique_lock<std::mutex> lock(mut);
@@ -140,7 +142,7 @@ public:
             device = torch::kCUDA;
             net->to(device);
         }
-        // net->eval();
+        net->eval();
         if (export_path != model_path)
             model_path = export_path;
     }

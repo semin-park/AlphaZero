@@ -52,12 +52,15 @@ Action get_action()
 
 Action get_mcts_action(MCTS<Env>& agent, const State& state, int iter_budget, int verbosity)
 {
+    std::cout << "Starting search..." << std::endl;
     auto policy = agent.search_probs(state, iter_budget, verbosity);
+    std::cout << "Done" << std::endl;
 
     int point = torch::argmax(policy).item<int>();
 
     int y = point / env.get_board_size();
     int x = point - y * env.get_board_size();
+    std::cout << "MCTS action: " << y << ',' << x << std::endl;
     return {y, x};
 }
 
@@ -93,10 +96,13 @@ int main(int argc, const char * argv[]) {
         auto board_stream = env.to_string(state);
         std::cout << board_stream.str() << std::endl;
         for (int i = 1; ; i++) {
-            if (player == HUM)
+            if (player == HUM) {
+                std::cout << "Human:" << std::endl;
                 action = get_action();
-            else
+            } else {
+                std::cout << "MCTS:" << std::endl;
                 action = get_mcts_action(agent, state, 1600, 3);
+            }
             
             std::tie(state, reward, done) = env.step(state, action);
             
@@ -115,7 +121,8 @@ int main(int argc, const char * argv[]) {
             }
         }
     } else {
-        NetConfig& netconf = NetConfig::get(0);
+        NetConfig& netconf = NetConfig::get(2);
+        std::cout << netconf.channels_to_string() << std::endl;
 
         PVNetwork net(board_size, netconf.resblocks(), c_in, c_out);
         std::string path = load_network(net);

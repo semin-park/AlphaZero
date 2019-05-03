@@ -126,12 +126,10 @@ public:
 
         working = true;
         start_token.notify_all();
-        
         {
             std::unique_lock<std::mutex> lock(consistency_lock);
             done_token.wait(lock, [this]{ return !working; });
         }
-
         // Fill in `action_probs`
         for (auto child : root->children) {
             float prob = (float) child->n / root->n;
@@ -150,7 +148,6 @@ public:
             if (verbosity >= 3)
                 _log_v3();
         }
-        
         return actions_probs;
     }
     

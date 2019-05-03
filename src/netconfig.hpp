@@ -1,6 +1,8 @@
 #ifndef netconfig_hpp
 #define netconfig_hpp
 
+#include <string>
+#include <sstream>
 #include <vector>
 
 class NetConfig
@@ -8,6 +10,8 @@ class NetConfig
 public:
     static NetConfig& get(int n)
     {
+        if (n != 2)
+            throw std::runtime_error("Go for option 2.");
         static NetConfig singleton(n);
         return singleton;
     }
@@ -15,6 +19,16 @@ public:
     std::vector<int> resblocks()
     {
         return Cs[id];
+    }
+
+    std::string channels_to_string()
+    {
+        std::stringstream stream;
+        stream << "Channels: [ ";
+        for (int C : Cs[id])
+            stream << C << ' ';
+        stream << "]" << std::endl;
+        return stream.str();
     }
 private:
     NetConfig(int n) : id(n) {

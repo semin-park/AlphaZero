@@ -29,7 +29,8 @@ int main(int argc, char const *argv[])
     int c_out = env.get_action_channels();
     int board_size = env.get_board_size();
 
-    NetConfig& netconf = NetConfig::get(0);
+    NetConfig& netconf = NetConfig::get(2);
+    std::cout << netconf.channels_to_string() << std::endl;
 
     PVNetwork net(board_size, netconf.resblocks(), c_in, c_out);
     std::cout << "Loading Network." << std::endl;
