@@ -8,9 +8,9 @@
 #include <torch/torch.h>
 
 struct ConvBlockImpl : torch::nn::Module {
-    ConvBlockImpl(int in_channel, int C /* channels out */, int K, int P)
-      : conv(register_module("conv", torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channel, C, K).padding(P)))),
-        batch_norm(register_module("bn", torch::nn::BatchNorm(C))) { /* pass */ }
+    ConvBlockImpl(int in, int out, /* channels out */ int K, int P)
+      : conv(register_module("conv", torch::nn::Conv2d(torch::nn::Conv2dOptions(in, out, K).padding(P)))),
+        batch_norm(register_module("bn", torch::nn::BatchNorm(torch::nn::BatchNormOptions(out).momentum(0.9)))) { /* pass */ }
 
     torch::Tensor forward(const torch::Tensor& x){
         return torch::relu(batch_norm(conv(x)));
@@ -23,36 +23,44 @@ TORCH_MODULE(ConvBlock);
 
 
 struct ResBlockImpl : torch::nn::Module {
-    ResBlockImpl(int C, int K, int P)
-      : conv(register_module("conv", torch::nn::Conv2d(torch::nn::Conv2dOptions(C, C, K).padding(P)))),
-        batch_norm(register_module("bn", torch::nn::BatchNorm(C))) { /* pass */ }
+    ResBlockImpl(int in, int out, int K, int P)
+      : conv1(register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(in, out, K).padding(P)))),
+        conv2(register_module("conv2", torch::nn::Conv2d(torch::nn::Conv2dOptions(out, out, K).padding(P)))),
+        batch_norm1(register_module("bn1", torch::nn::BatchNorm(torch::nn::BatchNormOptions(out).momentum(0.9)))),
+        batch_norm2(register_module("bn2", torch::nn::BatchNorm(torch::nn::BatchNormOptions(out).momentum(0.9)))) { /* pass */ }
 
     torch::Tensor forward(const torch::Tensor& input)
     {
-        torch::Tensor x = torch::relu(batch_norm(conv(input)));
-        x = batch_norm(conv(x));
+        torch::Tensor x = torch::relu(batch_norm1(conv1(input)));
+        x = batch_norm2(conv2(x));
         x = torch::relu(x + input);
         return x;
     }
 
-    torch::nn::Conv2d conv;
-    torch::nn::BatchNorm batch_norm;
+    torch::nn::Conv2d conv1, conv2;
+    torch::nn::BatchNorm batch_norm1, batch_norm2;
 };
 TORCH_MODULE(ResBlock);
 
 
 struct PolicyHeadImpl : torch::nn::Module {
-    PolicyHeadImpl(int C, int out)
-      : conv(register_module("conv", torch::nn::Conv2d(C, out, 1))) { /* pass */ }
+    PolicyHeadImpl(int C, int out, bool train)
+      : conv(register_module("conv", torch::nn::Conv2d(C, out, 1))),
+        training(train) { /* pass */ }
     
     torch::Tensor forward(const torch::Tensor& input)
     {
         torch::Tensor x = conv(input);
         auto shape = x.sizes();
-        x = torch::softmax(x.flatten(1), 1).view(shape);
+        if (training) {
+            x = x.flatten(1).log_softmax(1).view(shape);
+        } else {
+            x = x.flatten(1).softmax(1).view(shape);
+        }
         return x;
     }
     torch::nn::Conv2d conv;
+    bool training;
 };
 TORCH_MODULE(PolicyHead);
 
@@ -60,7 +68,7 @@ TORCH_MODULE(PolicyHead);
 struct ValueHeadImpl : torch::nn::Module {
     ValueHeadImpl(int C, int size_2)
       : value_conv(register_module("conv", torch::nn::Conv2d(C, 1, 1))),
-        value_bn(register_module("bn", torch::nn::BatchNorm(1))),
+        value_bn(register_module("bn", torch::nn::BatchNorm(torch::nn::BatchNormOptions(1).momentum(0.9)))),
         value_fc1(register_module("fc1", torch::nn::Linear(size_2, 64))),
         value_fc2(register_module("fc2", torch::nn::Linear(64, 2))) { /* pass */ }
     
@@ -86,22 +94,23 @@ TORCH_MODULE(ValueHead);
  *
  * board_size: Size of the board (3 in case of TicTacToe)
  * n_res     : # of ResBlock
+ * Cs        : # of channels for each ResBlock
  * in        : # of input channels
- * C         : # of intermediate channels
  * out       : # of output channels
  * K         : Kernel size
  * P         : Padding (only applied where K == 3)
  */
 struct PVNetworkImpl : torch::nn::Module {
-    PVNetworkImpl(int board_size, const std::vector<int>& Cs, int in, int out, int K = 3, int P = 1)
-      : num_res(Cs.size()),
+    PVNetworkImpl(int board_size, const std::vector<int>& Cs, int in, int out, bool training = false, int K = 3, int P = 1)
+      : num_res(Cs.size() - 1),
         CBlock(register_module("CBlock", ConvBlock(in, Cs[0], K, P))),
-        PHead(register_module("PHead", PolicyHead(Cs[num_res - 1], out))),
-        VHead(register_module("VHead", ValueHead(Cs[num_res - 1], board_size*board_size)))
+        PHead(register_module("PHead", PolicyHead(Cs[num_res - 1], out, training))),
+        VHead(register_module("VHead", ValueHead(Cs[num_res - 1], board_size*board_size))),
     {
         for (int i = 0; i < num_res; i++) {
-            int C = Cs[i];
-            RBlocks.emplace_back(register_module("RBlock_" + std::to_string(i), ResBlock(C, K, P)));
+            int C_in = Cs[i];
+            int C_out = Cs[i + 1];
+            RBlocks.emplace_back(register_module("RBlock_" + std::to_string(i), ResBlock(C_in, C_out, K, P)));
         }
     }
 
