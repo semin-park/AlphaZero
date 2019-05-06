@@ -85,7 +85,7 @@ public:
         while (alive)
         {
             std::unique_lock<std::mutex> lock(mut);
-            start_token.wait(lock, [this]{ return !input_q.empty() || !alive; });
+            start_cond.wait(lock, [this]{ return !input_q.empty() || !alive; });
             if (!alive)
                 break;
             
@@ -118,7 +118,7 @@ public:
             
             for (int i = 0; i < size; i++) {
                 mcts->wait_queues[ids[i]].emplace(std::move(policy_vec[i].squeeze()), std::move(reward_vec[i].squeeze()));
-                mcts->wait_tokens[ids[i]].notify_one();
+                mcts->wait_conds[ids[i]].notify_one();
             }
         }
     }
@@ -129,7 +129,7 @@ public:
             std::unique_lock<std::mutex> lock(mut);
             alive = false;
         }
-        start_token.notify_one();
+        start_cond.notify_one();
         
         worker.join();
     }
@@ -175,7 +175,6 @@ private:
     float avg_size{0};
     int count{0};
     
-    
     bool alive{true};
     
     // neural net related
@@ -185,7 +184,7 @@ private:
 
     std::thread worker;
     std::mutex mut;
-    std::condition_variable start_token;
+    std::condition_variable start_cond;
 
     torch::Tensor input;
     std::queue<std::tuple<int, B>> input_q;

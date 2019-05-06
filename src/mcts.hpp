@@ -33,10 +33,10 @@ public:
      * Constructor for the MCTS.
      * This initializes given number of workers
      *
-     * env_       : Environment to search
-     * nthreads_  : # of threads to use
-     * batch_size_: Maximum batch size for the evaluator
-     * conf_      : Configuration object
+     * nthreads_   : # of threads to use
+     * batch_size_ : Maximum batch size for the evaluator
+     * vl_         : Virtual loss
+     * c_puct_     : Amount of exploration (used in calculating nodes' ucb values)
      */
     MCTS(int nthreads_, int batch_size_, float vl_, float c_puct_)
       : nthreads(nthreads_),
@@ -44,10 +44,12 @@ public:
         vl(vl_),
         c_puct(c_puct_),
         wait_queues(nthreads),
-        wait_tokens(nthreads)
+        wait_conds(nthreads)
     {
         signal(SIGSEGV, sighandler);
+
         alpha = 10. / (env.get_board_size() * env.get_board_size());
+
         std::cout << "MCTS id: " << std::this_thread::get_id() << std::endl;
         for (int i = 0; i < nthreads; i++) {
             threads.emplace_back([this] (int idx) {
@@ -60,11 +62,11 @@ public:
                 while (alive) {
                     {
                         std::unique_lock<std::mutex> lock(consistency_lock);
-                        start_token.wait(lock, [this]{ return working || !alive; }); // escape if working or dead
+                        start_cond.wait(lock, [this]{ return working || !alive; }); // escape if working or dead
                         if (!alive)
                             return;
                     }
-                    _simulation_loop();
+                    __simulation_loop();
                 }
             }, i);
         }
@@ -73,12 +75,12 @@ public:
     
     
     /*
-     * Destructor joins the threads and closes the evaluator
+     * Join threads and close the evaluator
      */
     ~MCTS()
     {
         alive = false;
-        start_token.notify_all();
+        start_cond.notify_all();
         
         for (auto& t : threads)
             t.join();
@@ -89,22 +91,22 @@ public:
     /*
      * Public API -- returns the policy tensor
      *
-     * state_      : Current state of the game
-     * iter_budget_: How many iterations to perform
-     * verbosity_  : {0,1,2,3}, if greater than 0, this function will print
-     *               statistics about the search.
-     *               0: Does not print.
-     *               1: At the end of the search, print out the number of
-     *                  threads and iterations and the duration of the search.
-     *               2: During the search, prints out the current iteration number.
-     *               3: At the end of the search, print out how much time
-     *                  was spent on each stages.
+     * state_       : Current state of the game
+     * iter_budget_ : How many iterations to perform
+     * verbosity_   : {0,1,2,3}, if greater than 0, this function will print
+     *                statistics about the search.
+     *                0: Does not print.
+     *                1: At the end of the search, print out the number of
+     *                   threads and iterations and the duration of the search.
+     *                2: During the search, prints out the current iteration.
+     *                3: At the end of the search, prints out how much time
+     *                   was spent on each step.
      */
     P search_probs(const S& state_, int iter_budget_, int verbosity_ = 0)
     {
         verbosity = verbosity_;
         if (verbosity >= 3)
-            _log_init();
+            __log_init();
 
         auto start = std::chrono::system_clock::now();
 
@@ -112,11 +114,11 @@ public:
 
         if (verbosity >= 3) {
             auto t0 = std::chrono::system_clock::now();
-            _make_root(state_);
+            __make_root(state_);
             auto t1 = std::chrono::system_clock::now();
             create = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);
         } else {
-            _make_root(state_);
+            __make_root(state_);
         }
         
         P actions_probs = torch::zeros(env.get_action_shape());
@@ -125,16 +127,17 @@ public:
         count = 0;
 
         working = true;
-        start_token.notify_all();
+        start_cond.notify_all();
         {
             std::unique_lock<std::mutex> lock(consistency_lock);
-            done_token.wait(lock, [this]{ return !working; });
+            done_cond.wait(lock, [this]{ return !working; });
         }
-        // Fill in `action_probs`
-        for (auto child : root->children) {
+        
+        auto children = root->children;
+        for (auto it = children.begin(); it != children.end(); it++) {
+            auto action = it->first;
+            auto child = it->second;
             float prob = (float) child->n / root->n;
-            
-            auto action = child->action_in;
 
             int i = action[0];
             int j = action[1];
@@ -144,24 +147,24 @@ public:
         
         auto evaluator_stat = evaluator.retrieve_stat();
         if (verbosity >= 1) {
-            _log_v1(start, evaluator_stat);
+            __log_v1(start, evaluator_stat);
             if (verbosity >= 3)
-                _log_v3();
+                __log_v3();
         }
         return actions_probs;
     }
     
     
-    void _simulation_loop()
+    void __simulation_loop()
     {
         active_threads++;
         while (true) {
             if (verbosity >= 2) {
                 std::unique_lock<std::mutex> lock(consistency_lock);
-                _log_v2();
+                __log_v2();
             }
             
-            _simulate_once();
+            __simulate_once();
 
             std::unique_lock<std::mutex> lock(consistency_lock);
             if (++count > iter_budget - nthreads) { // count is atomic, but comparison is not, so needs a lock.
@@ -173,20 +176,21 @@ public:
 
         std::unique_lock<std::mutex> lock(consistency_lock);
         if (--active_threads == 0) { // decrement and comparison together are not atomic
-            done_token.notify_one();
+            done_cond.notify_one();
         }
     }
     
-    void _simulate_once()
+    void __simulate_once()
     {
+        std::shared_ptr<Node<Env>> leaf;
+        R reward;
         if (verbosity >= 3) {
             
             auto t0 = std::chrono::system_clock::now();
-            auto leaf = _select();
             auto t1 = std::chrono::system_clock::now();
-            R reward = _eval(*leaf);
+            std::tie(leaf, reward) = __select_and_eval();
             auto t2 = std::chrono::system_clock::now();
-            _backup(leaf, reward);
+            __backup(leaf, reward);
             auto t3 = std::chrono::system_clock::now();
             
             {
@@ -197,55 +201,54 @@ public:
             }
             
         } else {
-            
-            auto leaf = _select();
-            R reward = _eval(*leaf);
-            _backup(leaf, reward);
+            std::tie(leaf, reward) = __select_and_eval();
+            __backup(leaf, reward);
             
         }
     }
     
     
-    Node<Env>* _select()
+    std::tuple<std::shared_ptr<Node<Env>>, R> __select_and_eval()
     {
-        /*
-         * _select goes on until either the node is terminal, or is a leaf node.
-         * The selected leaf node stays locked.
-         *
-         * This probably doesn't need a tree level lock.
-         */
-//        std::shared_lock lock(tree_lock);
-        Node<Env>* ptr = root;
-        ptr->lock.lock();
-        while (!ptr->terminal && ptr->children.size() > 0) {
-            if (ptr->parent)
-                ptr->parent->lock.unlock();
+        auto focus = root;
+        typename decltype(focus->children)::iterator it;
+
+        focus->lock.lock();
+        while (!focus->terminal && focus->children.size() > 0) {
+            auto parent = focus->parent.lock();
+            if (parent)
+                parent->lock.unlock();
             
-            ptr = _choose(ptr->children);
-            ptr->lock.lock();
-            ptr->n += vl;
-            ptr->v -= vl;
-            ptr->q = ptr->v / ptr->n;
+            it = __choose(focus->children);
+            focus = it->second;
+            focus->lock.lock();
+            focus->n += vl;
+            focus->v -= vl;
+            focus->q = focus->v / focus->n;
         }
-        if (ptr->parent)
-            ptr->parent->lock.unlock();
-        return ptr;
+        auto parent = focus->parent.lock();
+        if (parent)
+            parent->lock.unlock();
+        if (focus->terminal)
+            return std::make_tuple(focus, focus->reward);
+
+        R reward = _eval(focus, it->first);
+        return std::make_tuple(focus, reward);
     }
     
     
-    R _eval(Node<Env>& leaf)
+    R _eval(std::shared_ptr<Node<Env>>& leaf, const A& action)
     {
-        if (leaf.terminal)
-            return leaf.reward;
-        
+        const auto& parent = leaf->parent.lock();
         S state;
         R reward;
+        int player;
         bool done;
         
         if (verbosity >= 3) {
             
             auto t0 = std::chrono::system_clock::now();
-            std::tie(state, reward, done) = env.step(leaf.parent->state, leaf.action_in);
+            std::tie(state, reward, done) = env.step(parent->state, action);
             auto t1 = std::chrono::system_clock::now();
             
             {
@@ -255,29 +258,28 @@ public:
             }
             
         } else {
-            std::tie(state, reward, done) = env.step(leaf.parent->state, leaf.action_in);
+            std::tie(state, reward, done) = env.step(parent->state, action);
         }
-        
+
+        player = env.get_player(state);
         
         if (done) {
-            leaf.add(state, reward, true);
+            leaf->terminal_add(state, reward, player, true);
             return reward;
         }
         
         const B& board = env.get_board(state);
         P policy;
-        
         int id = ids[std::this_thread::get_id()];
         auto& queue = wait_queues[id];
         
         if (verbosity >= 3) {
             auto t0 = std::chrono::system_clock::now();
-            
             {
                 std::unique_lock<std::mutex> lock(q_lock);
                 evaluator.input_q.emplace(id, board);
-                evaluator.start_token.notify_one();
-                wait_tokens[id].wait(lock, [&queue]{ return !queue.empty(); });
+                evaluator.start_cond.notify_one();
+                wait_conds[id].wait(lock, [&queue]{ return !queue.empty(); });
             }
             
             std::tie(policy, reward) = std::move(queue.front());
@@ -290,7 +292,7 @@ public:
                 net_count++;
             }
             
-            leaf.add(state, reward, false);
+            leaf->add(state, player, false);
             
             auto t2 = std::chrono::system_clock::now();
             _append_children(leaf, policy);
@@ -304,38 +306,32 @@ public:
             {
                 std::unique_lock<std::mutex> lock(q_lock);
                 evaluator.input_q.emplace(id, board);
-                evaluator.start_token.notify_one();
-                wait_tokens[id].wait(lock, [&queue]{ return !queue.empty(); });
+                evaluator.start_cond.notify_one();
+                wait_conds[id].wait(lock, [&queue]{ return !queue.empty(); });
             }
             
             std::tie(policy, reward) = std::move(queue.front());
             queue.pop();
             
-            leaf.add(state, reward, false);
+            leaf->add(state, player, false);
             
             _append_children(leaf, policy);
         }
         return reward;
     }
     
-    void _backup(Node<Env>* leaf, const R& result)
+    void __backup(std::shared_ptr<Node<Env>>& leaf, const R& result)
     {
         /*
-         * Probably doesn't need tree level synchronization,
-         * because the tree is never explicitly used in this
-         * function. There is no way that the tree's rebalance
-         * could cause problems here.
-         *
-         * Note: the leaf node has been locked since _select()
+         * Note: the leaf node is locked since __select()
          */
-        //    std::shared_lock lock(tree_lock);
-        Node<Env>* node = leaf;
-        while (node->parent) {
+        std::shared_ptr<Node<Env>> node = leaf;
+        while (auto parent = node->parent.lock()) {
             if (node != leaf) {
                 node->lock.lock();
             }
             
-            int player = node->parent->player;
+            int player = parent->player;
             
             float value = result[player].item<float>();
             node->n += 1 - vl;
@@ -344,33 +340,39 @@ public:
             
             node->lock.unlock();
             
-            node = node->parent;
+            node = parent;
         }
         node->n++;  // Update root's N
     }
     
     
     
-    Node<Env>* _choose(const std::vector<Node<Env>*>& children)
+    auto __choose(std::map<A, std::shared_ptr<Node<Env>>>& children)
+        -> typename std::remove_reference<decltype(children)>::type::iterator
     {
+        using result_type = typename std::remove_reference<decltype(children)>::type::iterator;
+
         float max_val = -100;
-        std::vector<Node<Env>*> max_children;
-        for (auto ptr : children) {
+        result_type it;
+        std::vector<result_type> max_children;
+
+        for (it = children.begin(); it != children.end(); it++) {
+            auto node = it->second;
             
-            float val = ptr->ucb(c_puct);
+            float val = node->ucb(c_puct);
             
             if (val > max_val) {
                 
                 max_val = val;
                 max_children.clear();
-                max_children.push_back(ptr);
+                max_children.push_back(it);
                 
             } else if (val == max_val) {
-                max_children.push_back(ptr);
+                max_children.push_back(it);
             }
         }
         if (max_children.size() == 0)
-            throw std::runtime_error("<MCTS::_choose> No max children");
+            throw std::runtime_error("<MCTS::__choose> No max children");
         if (max_children.size() == 1)
             return max_children[0];
         
@@ -380,19 +382,17 @@ public:
     
     
     
-    void _make_root(const S& state)
+    void __make_root(const S& state)
     {
         const B& board = env.get_board(state);
         const ID& id = env.get_id(state);
+        int player = env.get_player(state);
         
-        if (tree.find(id) == tree.end()) {
-            tree.clear();
-            tree.emplace(
-                         std::piecewise_construct,
-                         std::forward_as_tuple(id),
-                         std::forward_as_tuple(id, 1, nullptr)
-                         );
-            root = &tree.at(id);
+        auto target = find(root, id);
+        if (target == nullptr) {
+            std::cout << "Creating a new root" << std::endl;
+            root = std::make_shared<Node<Env>>(id, 1, nullptr);
+            
             // Run evaluation on the root
             P policy;
             R reward;
@@ -402,106 +402,58 @@ public:
             {
                 std::unique_lock<std::mutex> lock(q_lock);
                 evaluator.input_q.emplace(idx, board);
-                evaluator.start_token.notify_one();
-                wait_tokens[idx].wait(lock, [&queue]{ return !queue.empty(); });
+                evaluator.start_cond.notify_one();
+                wait_conds[idx].wait(lock, [&queue]{ return !queue.empty(); });
             }
             
             std::tie(policy, reward) = std::move(queue.front());
             queue.pop();
             
-            root->add(state, reward, false);
+            root->add(state, player, false);
             root->n++;
-            _append_children(*root, policy);
+            _append_children(root, policy);
             
             
-        } else if (tree.at(id).parent != nullptr) {
-            root = &tree.at(id);
-            _prune_tree();
+        } else if (target->parent.lock()) {
+            std::cout << "Reusing root" << std::endl;
+            root = target;
+            std::cout << "Pruned tree" << std::endl;
         }
     }
 
     
     
-    void _append_children(Node<Env>& node, const P& policy)
+    void _append_children(std::shared_ptr<Node<Env>>& node, const P& policy)
     {
-        auto actions = env.possible_actions(node.state, node.player);
-        node.children.reserve(actions.size());
+        auto actions = env.possible_actions(node->state, node->player);
+        auto& children = node->children;
 
         auto policy_a = policy.accessor<float, 2>();
-        
         std::vector<float> noise;
-        if (!node.parent) {
-            // if root, apply dirichlet noise
+        auto parent = node->parent.lock();
+        if (!parent) {
             noise = dirichlet((int) actions.size());
         }
-        
         int noise_idx = 0;
-        for (auto& action : actions) {
-            
+        for (const auto& action : actions) {
+
             int i = action[0];
             int j = action[1];
 
             float prior = policy_a[i][j];
-            if (!node.parent) {
+            if (!parent) {
                 prior = 0.75 * prior + 0.25 * noise[noise_idx++];
             }
-            
-            ID id = node.id;
+
+            ID id = node->id;
             id.push_back(action);
-            
+
             // Piecewise construct to assure that no copy/move occurs
-            {
-                std::unique_lock<std::shared_mutex> lock(tree_lock);
-                tree.emplace(
-                             std::piecewise_construct,
-                             std::forward_as_tuple(id),
-                             std::forward_as_tuple(id, prior, &node)
-                             );
-            }
-
-            std::shared_lock<std::shared_mutex> lock(tree_lock);
-            node.children.push_back(&tree.at(id));
+            auto child = std::make_shared<Node<Env>>(id, prior, node);
+            children.emplace(action, child);
         }
     }
     
-    
-    
-    /*
-     * Retains the root, erases everything else
-     */
-    void _prune_tree()
-    {
-        if (!root->parent)
-            return;
-        Node<Env>* focus = root;
-        Node<Env>* parent = focus->parent;
-        root->parent = nullptr;
-        
-        auto it = std::find(parent->children.begin(), parent->children.end(), focus);
-        parent->children.erase(it);
-        
-        focus = parent;
-        while (focus->parent) {
-            focus = focus->parent;
-        }
-        _erase_descendents(focus);
-        tree.erase(focus->id);
-    }
-    
-    /*
-     * Recursively erases all decendents of a node.
-     * This function is only called by _prune_tree() before
-     * executing the search. This function is not thread-safe.
-     */
-    void _erase_descendents(Node<Env>* top)
-    {
-        auto& children = top->children;
-        for (auto child : children) {
-            _erase_descendents(child);
-            tree.erase(child->id);
-        }
-    }
-
     void load()
     {
         evaluator.setup();
@@ -509,20 +461,14 @@ public:
 
     void clear()
     {
-        std::unique_lock<std::shared_mutex> lock(tree_lock);
-        tree.clear();
+        root.reset();
     }
     
     
     /*
      * Attributes
      */
-
     
-    // Nodes need to know
-    std::map<ID, Node<Env>> tree; // must be public
-    
-    // Initialized when MCTS is created
     int nthreads;
     int batch_size;
     float vl;
@@ -540,7 +486,7 @@ public:
     int iter_budget;
     
     // Multiple threads should know which is the current root
-    Node<Env>* root;
+    std::shared_ptr<Node<Env>> root{nullptr};
     
     // Calculated based on the board size
     float alpha;
@@ -551,17 +497,12 @@ public:
     std::vector<std::queue<std::tuple<P, R>>> wait_queues;
     std::mutex q_lock; // when you're emplacing to the evaluator queue.
     
-    std::atomic<bool> alive {true};
-    std::atomic<bool> working {false};
+    std::atomic<bool> alive {true}, working {false};
     
     std::atomic<int> active_threads {0};
     
-    std::shared_mutex tree_lock; // whenever you modify the structure of the tree
-    std::condition_variable start_token;
-    std::condition_variable done_token;
-    std::vector<std::condition_variable> wait_tokens;
-    
-    
+    std::condition_variable start_cond, done_cond;
+    std::vector<std::condition_variable> wait_conds;
     
     
     // Random number generator
@@ -570,13 +511,13 @@ public:
     // Logging
     int verbosity;
     
-    void _log_init()
+    void __log_init()
     {
         select = eval = step = net = append = backup = std::chrono::milliseconds(0);
         step_count = net_count = 0;
     }
 
-    void _log_v1(const std::chrono::time_point<std::chrono::system_clock>& start,
+    void __log_v1(const std::chrono::time_point<std::chrono::system_clock>& start,
         const std::tuple<float, int>& evaluator_stat)
     {
         using std::chrono::duration_cast;
@@ -595,12 +536,12 @@ public:
                   << std::endl;
     }
 
-    void _log_v2()
+    void __log_v2()
     {
         std::cout << "* Simulation " << count << " *\r" << std::flush;
     }
 
-    void _log_v3()
+    void __log_v3()
     {
         // Average of different threads
         float select_f = float(select.count()) / nthreads;
@@ -618,12 +559,12 @@ public:
         if (net_count == 0) net_count++;
         
         std::cout << "(Root Prune) Total: " << std::setw(8) << create.count() << std::endl;
-        std::cout << "(Select)     Total: " << std::setw(8) << select_f << " | Avg: " << select_f / count << std::endl;
-        std::cout << "(Eval)       Total: " << std::setw(8) << eval_f << " | Avg: " << eval_f / count << std::endl;
-        std::cout << "    (Step)   Total: " << std::setw(8) << step_f << " | Avg: " << step_f / step_count << std::endl;
-        std::cout << "    (Net)    Total: " << std::setw(8) << net_f << " | Avg: " << net_f / net_count << std::endl;
+        std::cout << "(Select)     Total: " << std::setw(8) << select_f << " | Avg: " << select_f / count     << std::endl;
+        std::cout << "(Eval)       Total: " << std::setw(8) << eval_f   << " | Avg: " << eval_f / count       << std::endl;
+        std::cout << "    (Step)   Total: " << std::setw(8) << step_f   << " | Avg: " << step_f / step_count  << std::endl;
+        std::cout << "    (Net)    Total: " << std::setw(8) << net_f    << " | Avg: " << net_f / net_count    << std::endl;
         std::cout << "    (Append) Total: " << std::setw(8) << append_f << " | Avg: " << append_f / net_count << std::endl;
-        std::cout << "(Backup)     Total: " << std::setw(8) << backup_f << " | Avg: " << backup_f / count << std::endl;
+        std::cout << "(Backup)     Total: " << std::setw(8) << backup_f << " | Avg: " << backup_f / count     << std::endl;
         
         std::cout << "Simulation count: " << count << std::endl;
         std::cout << "Step count: " << step_count << std::endl;
