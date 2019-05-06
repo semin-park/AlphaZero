@@ -75,7 +75,7 @@ int main(int argc, char const *argv[])
             std::tie(p, v) = net(state);
 
             vloss = torch::sum(torch::pow(v - reward, 2)) / 2;
-            ploss = -torch::sum(torch::log(p) * policy);
+            ploss = -torch::sum(p * policy);
             wloss = torch::zeros({}).to(device);
             for (auto& param : net->parameters())
                 wloss += torch::norm(param, 2);

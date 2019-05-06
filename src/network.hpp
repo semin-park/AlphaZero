@@ -105,7 +105,7 @@ struct PVNetworkImpl : torch::nn::Module {
       : num_res(Cs.size() - 1),
         CBlock(register_module("CBlock", ConvBlock(in, Cs[0], K, P))),
         PHead(register_module("PHead", PolicyHead(Cs[num_res - 1], out, training))),
-        VHead(register_module("VHead", ValueHead(Cs[num_res - 1], board_size*board_size))),
+        VHead(register_module("VHead", ValueHead(Cs[num_res - 1], board_size*board_size)))
     {
         for (int i = 0; i < num_res; i++) {
             int C_in = Cs[i];

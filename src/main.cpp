@@ -106,9 +106,7 @@ int main(int argc, const char * argv[]) {
             
             std::tie(state, reward, done) = env.step(state, action);
             
-            char mark = 'O';
-            if (player == 1)
-                mark = 'X';
+            char mark = player ? 'X' : 'O';
             std::cout << "Step " << i << " (Player " << mark << "):" << std::endl;
             auto board_stream = env.to_string(state);
             std::cout << board_stream.str() << std::endl;
@@ -132,14 +130,20 @@ int main(int argc, const char * argv[]) {
         R reward;
         bool done = false;
 
+        auto device = torch::cuda::is_available() ? torch::kCUDA : torch::kCPU;
+
         torch::Tensor p, v;
+        std::cout << "Step " << 1 << std::endl;
+        std::cout << "State:" << std::endl;
+        std::cout << env.to_string(state).str() << std::endl;
 
         for (int i = 1; ; i++) {
             if (done)
                 break;
             board = env.get_board(state);
-            std::tie(p, v) = net(board.unsqueeze(0).to(torch::kFloat32));
-
+            std::tie(p, v) = net(board.unsqueeze(0).to(device).to(torch::kFloat32));
+            p = p.to(torch::kCPU);
+            v = v.to(torch::kCPU);
             auto actions = env.possible_actions(state, env.get_player(state));
             torch::Tensor actual_policy = torch::zeros({board_size, board_size});
             for (auto& a : actions) {
@@ -148,18 +152,17 @@ int main(int argc, const char * argv[]) {
                 actual_policy[i][j] = p.squeeze()[i][j];
             }
 
-            std::cout << "Step " << i << std::endl;
-            std::cout << "State:" << std::endl;
-            std::cout << env.to_string(state).str() << std::endl;
-            std::cout << "Predicted policy:\n" << actual_policy << std::endl;
-            std::cout << "Predicted reward:\n" << v << std::endl << std::endl;
-
             int point = torch::argmax(actual_policy).item<int>();
 
             int y = point / board_size;
             int x = point - y * board_size;
 
             std::tie(state, reward, done) = env.step(state, {y, x});
+            std::cout << "Step " << i << std::endl;
+            std::cout << "State:" << std::endl;
+            std::cout << env.to_string(state).str() << std::endl;
+            std::cout << "Predicted policy:\n" << actual_policy << std::endl;
+            std::cout << "Predicted reward:\n" << v << std::endl << std::endl;
         }
     }
 
