@@ -74,7 +74,7 @@ std::string load_network(PVNetwork& net, const std::string& path = "")
         ss << std::endl << "* ERROR *" << std::endl
            << "\"ckpt_location.txt\" must be in the working directory." << std::endl
            << "Furthermore, the path that \"ckpt_location.txt\" points to must exist." << std::endl
-           << "Current working directory: " << cwd << std::endl;
+           << "Current working directory: " << cwd << std::endl
            << "Current time: " << ctime(&now);
 
         free(cwd);
