@@ -63,24 +63,27 @@ std::string load_network(PVNetwork& net, const std::string& path = "")
     int fd = open("ckpt_location.txt", O_RDONLY);
     flock(fd, LOCK_SH);
     
-    std::ifstream dir("ckpt_location.txt");
+    std::ifstream ckpt_loc;
+    ckpt_loc.open("ckpt_location.txt");
 
-    if (!dir.is_open()) {
+    if (!ckpt_loc.is_open()) {
         char *cwd = getcwd(nullptr, 0);
+        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()); 
 
         std::stringstream ss;
         ss << std::endl << "* ERROR *" << std::endl
            << "\"ckpt_location.txt\" must be in the working directory." << std::endl
            << "Furthermore, the path that \"ckpt_location.txt\" points to must exist." << std::endl
            << "Current working directory: " << cwd << std::endl;
+           << "Current time: " << ctime(&now);
 
         free(cwd);
         throw std::runtime_error(ss.str());
     }
 
     std::string export_path;
-    getline(dir, export_path);
-    dir.close();
+    getline(ckpt_loc, export_path);
+    ckpt_loc.close();
     flock(fd, LOCK_UN);
 
     if (export_path == path) {
