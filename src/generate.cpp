@@ -97,12 +97,13 @@ int main(int argc, char const *argv[])
 
             int y = point / board_size;
             int x = point - y * board_size;
+            Env::action_type action {y, x};
 
             char player = env.get_player(state) == 0 ? 'O' : 'X';
-            std::tie(state, reward, done) = env.step(state, {y, x});
+            std::tie(state, reward, done) = env.step(state, action);
             
             std::cout << "Step " << i << " (Player " << player << "):" << std::endl;
-            auto board_stream = env.to_string(state);
+            auto board_stream = env.to_string(state, action);
             auto pol_stream = visualize_stream(policy);
             adjacent_display(pol_stream, board_stream);
 

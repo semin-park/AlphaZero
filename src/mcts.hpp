@@ -417,7 +417,6 @@ public:
         } else if (target->parent.lock()) {
             std::cout << "Reusing root" << std::endl;
             root = target;
-            std::cout << "Pruned tree" << std::endl;
         }
     }
 
@@ -426,6 +425,7 @@ public:
     void _append_children(std::shared_ptr<Node<Env>>& node, const P& policy)
     {
         auto actions = env.possible_actions(node->state, node->player);
+        total_actions_size += actions.size();
         auto& children = node->children;
 
         auto policy_a = policy.accessor<float, 2>();
@@ -515,6 +515,7 @@ public:
     {
         select = eval = step = net = append = backup = std::chrono::milliseconds(0);
         step_count = net_count = 0;
+        total_actions_size = 0;
     }
 
     void __log_v1(const std::chrono::time_point<std::chrono::system_clock>& start,
@@ -569,13 +570,14 @@ public:
         std::cout << "Simulation count: " << count << std::endl;
         std::cout << "Step count: " << step_count << std::endl;
         std::cout << "Net count: " << net_count << std::endl;
+        std::cout << "Average append: " << (float) total_actions_size / count << std::endl;
         std::cout << std::endl;
     }
     
     std::chrono::milliseconds create, select, eval, step, net, append, backup;
     std::atomic<int> step_count, net_count;
     std::mutex consistency_lock; // whenever you're modifying counting variables, or changing the status of the MCTS
-
+    std::size_t total_actions_size;
 };
 
 #endif /* mcts_hpp */
