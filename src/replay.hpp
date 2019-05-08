@@ -77,10 +77,10 @@ public:
                 reward_size = reward.numel() * sizeof(float);
             }
 
-            for (int n = 0; n < 4; n++) {
+            for (int r = 0; r < 4; r++) {
                 // rotated
-                state_r = state.rot90(n);
-                policy_r = policy.rot90(n);
+                state_r = state.rot90(r, {1,2}).contiguous();
+                policy_r = policy.rot90(r, {1,2}).contiguous();
 
                 zmq::message_t msg_s_r(state_size);
                 zmq::message_t msg_p_r(policy_size);
@@ -95,8 +95,8 @@ public:
                 socket.send(msg_r_r, 0);
 
                 // flipped
-                state_f = state_r.flip(1);
-                policy_f = policy_r.flip(1);
+                state_f = state_r.flip(1).contiguous();
+                policy_f = policy_r.flip(1).contiguous();
 
                 zmq::message_t msg_s_f(state_size);
                 zmq::message_t msg_p_f(policy_size);
@@ -148,7 +148,6 @@ public:
         memcpy(state.data<uint8_t>(), msg_s.data(), state.numel() * sizeof(uint8_t));
         memcpy(policy.data<float>(), msg_p.data(), policy.numel() * sizeof(float));
         memcpy(reward.data<float>(), msg_r.data(), reward.numel() * sizeof(float));
-
 
         std::unique_lock<std::mutex> lock(m);
         buffer.emplace_back(std::move(state), std::move(policy), std::move(reward));
@@ -232,7 +231,7 @@ public:
         std::uniform_int_distribution<int> dist(0, (int) buffer.size() - 1);
         for (int i = 0; i < size; i++) {
             auto tup = buffer[dist(rng)];
-            state.slice(0,i,i+1) = std::get<0>(tup);
+            state.slice(0,i,i+1) = std::get<0>(tup).to(torch::kFloat32);
             policy.slice(0,i,i+1) = std::get<1>(tup);
             reward.slice(0,i,i+1) = std::get<2>(tup);
         }
@@ -257,7 +256,7 @@ public:
             std::unique_lock<std::mutex> lock(m);
             int n = buffer.size();
 
-            state = torch::empty({n, b_sh[0], b_sh[1], b_sh[2]});
+            state = torch::empty({n, b_sh[0], b_sh[1], b_sh[2]}, torch::TensorOptions().dtype(torch::kUInt8));
             policy = torch::empty({n, a_sh[0], a_sh[1], a_sh[2]});
             reward = torch::empty({n, 2});
 
@@ -267,6 +266,7 @@ public:
                 reward.slice(0,i,i+1) = std::get<2>(buffer[i]);
             }
         }
+
         torch::save(state, state_path);
         torch::save(policy, policy_path);
         torch::save(reward, reward_path);
